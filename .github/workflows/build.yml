@@ -7,17 +7,17 @@ on:
         description: Kernel source repository
         required: true
         type: string
-        default: cctv18/android_kernel_common_oneplus_sm8750
+        default: ramabondanp/android_kernel_common-6.1
       kernel_branch:
         description: Kernel source branch
         required: true
         type: string
-        default: oneplus/sm8750_v_16.0.0_oneplus_13_6.6.89
+        default: android14-6.1
       kernel_suffix:
         description: Kernel localversion suffix, without leading dash
         required: true
         type: string
-        default: android15-8-g7e1f3c083cc6-abogki467167594-4k
+        default: perf+
       full_kernel_build:
         description: Build in-tree modules first. Slower, useful when you need fresh Module.symvers from a full kernel build.
         required: true
@@ -26,6 +26,11 @@ on:
         options:
           - 'true'
           - 'false'
+      module_layout_crc:
+        description: Target kernel module_layout CRC (0 disables patching)
+        required: true
+        type: string
+        default: '0xc4965eab'
   push:
     branches:
       - main
@@ -62,9 +67,9 @@ jobs:
       - name: Resolve build inputs
         id: vars
         env:
-          KERNEL_REPO: ${{ inputs.kernel_repo || 'cctv18/android_kernel_common_oneplus_sm8750' }}
-          KERNEL_BRANCH: ${{ inputs.kernel_branch || 'oneplus/sm8750_v_16.0.0_oneplus_13_6.6.89' }}
-          KERNEL_SUFFIX: ${{ inputs.kernel_suffix || 'android15-8-g7e1f3c083cc6-abogki467167594-4k' }}
+          KERNEL_REPO: ${{ inputs.kernel_repo || 'ramabondanp/android_kernel_common-6.1' }}
+          KERNEL_BRANCH: ${{ inputs.kernel_branch || 'android14-6.1' }}
+          KERNEL_SUFFIX: ${{ inputs.kernel_suffix || 'perf+' }}
         run: |
           set -euxo pipefail
           KERNEL_KEY="$(printf '%s-%s-%s' "$KERNEL_REPO" "$KERNEL_BRANCH" "$KERNEL_SUFFIX" | tr '/:@ ' '----')"
@@ -169,15 +174,13 @@ jobs:
           for f in scripts/setlocalversion; do
             sed -i 's/ -dirty//g' "$f"
             sed -i 's/${scm_version}//' "$f"
-            sed -i -E '$s|echo ".*"|echo ""|' "$f"
           done
           sed -i '/^CONFIG_LOCALVERSION=/d' arch/x86/configs/gki_defconfig
           sed -i '/^CONFIG_LOCALVERSION_AUTO=/d' arch/x86/configs/gki_defconfig
           printf 'CONFIG_LOCALVERSION="-%s"\nCONFIG_LOCALVERSION_AUTO=n\n' "$KERNEL_SUFFIX" >> arch/x86/configs/gki_defconfig
 
-            # Patch kernel version to match target device (6.1.90)
+            # Patch the base version; CONFIG_LOCALVERSION supplies "-perf+".
             sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 90/' Makefile
-            sed -i 's/^EXTRAVERSION = .*/EXTRAVERSION = -perf+/' Makefile
 
             # Disable features not present in 6.1.90 kernel
             printf 'CONFIG_CFI_CLANG=n\nCONFIG_DEBUG_INFO_BTF=n\nCONFIG_KCFI=n\n' >> arch/x86/configs/gki_defconfig
@@ -276,6 +279,19 @@ jobs:
             exit 1
           fi
           modinfo "${GITHUB_WORKSPACE}/${MODULE_NAME}.ko" | tee modinfo.txt || true
+
+      - name: Apply target module_layout CRC
+        env:
+          MODULE_LAYOUT_CRC: ${{ inputs.module_layout_crc || '0xc4965eab' }}
+        run: |
+          set -euxo pipefail
+          if [[ "$MODULE_LAYOUT_CRC" != "0" ]]; then
+            python3 tools/patch_module_target.py \
+              "${MODULE_NAME}.ko" "${MODULE_NAME}.patched.ko" \
+              --crc "module_layout=${MODULE_LAYOUT_CRC}"
+            mv "${MODULE_NAME}.patched.ko" "${MODULE_NAME}.ko"
+            modinfo "${MODULE_NAME}.ko" | tee modinfo.txt
+          fi
 
       - name: Package artifacts
         run: |

@@ -163,32 +163,17 @@ su -c 'insmod /data/local/tmp/selinux_seqno_fix.ko'
 su -c 'dmesg | grep selinux_seqno_fix'
 ```
 
-After loading, confirm the kretprobes are in place and what they have
-done so far:
+After loading, confirm the module and kretprobes initialized:
 
 ```sh
-su -c 'cat /sys/module/selinux_seqno_fix/parameters/policyload_hook_hits'
-su -c 'cat /sys/module/selinux_seqno_fix/parameters/hits'
-su -c 'cat /sys/module/selinux_seqno_fix/parameters/fixups'
-su -c 'cat /sys/module/selinux_seqno_fix/parameters/passthrough'
-su -c 'cat /sys/module/selinux_seqno_fix/parameters/last_status_sequence'
-su -c 'cat /sys/module/selinux_seqno_fix/parameters/last_status_policyload'
-su -c 'cat /sys/module/selinux_seqno_fix/parameters/last_avc_policy_seqno'
-su -c 'cat /sys/module/selinux_seqno_fix/parameters/last_avd_seqno'
-su -c 'cat /sys/module/selinux_seqno_fix/parameters/last_repair_target'
+su -c 'grep selinux_seqno_fix /proc/modules'
+su -c 'dmesg | grep selinux_seqno_fix'
 ```
 
-`fixups` should advance every time KSU stomps; `passthrough` should
-advance for the post-stomp baseline reads and for any real policy hot
-reload (e.g. a `setbool` triggered from userspace). If `fixups` is large
-and `passthrough` is zero you are probably observing a build that never
-hot-reloads policy, which is normal on most production devices.
-
-Disable without unloading:
-
-```sh
-su -c 'echo 0 > /sys/module/selinux_seqno_fix/parameters/enabled'
-```
+The MuMu-compatible build keeps counters internal instead of exporting
+module parameters. MuMu's kernel gives the public GKI `param_ops_*`
+symbols different modversion CRCs, while the interfaces used by the
+repair itself remain compatible.
 
 Unload:
 
@@ -202,7 +187,7 @@ su -c 'rmmod selinux_seqno_fix'
 - Resolves `selinux_kernel_status_page()`,
   `selinux_status_update_policyload()` and `avc_policy_seqno()` via
   temporary kprobes at load time.
-- Designed for arm64 Android kernels.
+- Supports arm64 and x86_64 Android kernels.
 - If the primary `selinux_status_update_policyload` kretprobe cannot be
   registered, the module continues with the `security_compute_av_user`-only
   safety-net path. If `selinux_kernel_status_page()` cannot be resolved at

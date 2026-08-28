@@ -2,29 +2,18 @@
 
 MODDIR="${0%/*}"
 KO="$MODDIR/selinux_seqno_fix.ko"
-PARAM="/sys/module/selinux_seqno_fix/parameters/enabled"
+MODULE_DIR="/sys/module/selinux_seqno_fix"
 LOG="$MODDIR/load.log"
 
 log_msg() {
   echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG"
 }
 
-log_params() {
-  for name in enabled hits policyload_hook_hits fixups status_fixups passthrough no_status null_avd last_status_sequence last_status_policyload last_avc_policy_seqno last_avd_seqno last_repair_target last_old_seqno last_live_seqno; do
-    path="/sys/module/selinux_seqno_fix/parameters/$name"
-    if [ -r "$path" ]; then
-      log_msg "$name=$(cat "$path" 2>/dev/null)"
-    fi
-  done
-}
-
 : > "$LOG"
 log_msg "kernel=$(uname -r)"
 
-if [ -e "$PARAM" ]; then
-  echo 1 > "$PARAM" 2>/dev/null
-  log_msg "module already loaded; enabled=1"
-  log_params
+if [ -d "$MODULE_DIR" ]; then
+  log_msg "module already loaded"
   exit 0
 fi
 
@@ -35,11 +24,7 @@ fi
 
 if insmod "$KO" >> "$LOG" 2>&1; then
   log_msg "insmod ok"
-  if [ -e "$PARAM" ]; then
-    echo 1 > "$PARAM" 2>/dev/null
-    log_msg "enabled=1"
-  fi
-  log_params
+  dmesg | grep selinux_seqno_fix | tail -n 10 >> "$LOG" 2>/dev/null
 else
   rc=$?
   log_msg "insmod failed rc=$rc"

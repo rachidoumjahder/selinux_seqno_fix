@@ -76,38 +76,11 @@ static unsigned int last_avc_policy_seqno;
 static unsigned int last_avd_seqno;
 static unsigned int last_repair_target;
 
-module_param(enabled, bool, 0644);
-MODULE_PARM_DESC(enabled, "Enable seqlock-style policyload repair on the SELinux status page");
-module_param_named(hits, av_user_hits, ulong, 0444);
-MODULE_PARM_DESC(hits, "Number of security_compute_av_user returns observed");
-module_param_named(policyload_hook_hits, policyload_hook_hits, ulong, 0444);
-MODULE_PARM_DESC(policyload_hook_hits, "Number of selinux_status_update_policyload returns observed");
-module_param_named(fixups, status_fixups, ulong, 0444);
-MODULE_PARM_DESC(fixups, "Number of policyload-stomp repairs that actually wrote the page");
-module_param_named(status_fixups, status_fixups, ulong, 0444);
-MODULE_PARM_DESC(status_fixups, "Number of policyload-stomp repairs that actually wrote the page");
-module_param_named(passthrough, status_passthrough, ulong, 0444);
-MODULE_PARM_DESC(passthrough, "Number of returns where status.policyload was non-zero and the page was left untouched (real hot reloads or already-coherent baseline)");
-module_param_named(no_policyload, av_user_no_status, ulong, 0444);
-MODULE_PARM_DESC(no_policyload, "Number of returns skipped because SELinux status was unavailable");
-module_param_named(no_status, av_user_no_status, ulong, 0444);
-MODULE_PARM_DESC(no_status, "Number of returns skipped because SELinux status was unavailable");
-module_param_named(null_avd, av_user_null_avd, ulong, 0444);
-MODULE_PARM_DESC(null_avd, "Number of returns skipped because the av_decision pointer was missing");
-module_param_named(last_status_sequence, last_status_sequence, uint, 0444);
-MODULE_PARM_DESC(last_status_sequence, "Last SELinux status sequence observed before any repair attempt");
-module_param_named(last_status_policyload, last_status_policyload, uint, 0444);
-MODULE_PARM_DESC(last_status_policyload, "Last SELinux status policyload observed before any repair attempt");
-module_param_named(last_avc_policy_seqno, last_avc_policy_seqno, uint, 0444);
-MODULE_PARM_DESC(last_avc_policy_seqno, "Last AVC policy seqno observed");
-module_param_named(last_avd_seqno, last_avd_seqno, uint, 0444);
-MODULE_PARM_DESC(last_avd_seqno, "Last av_decision seqno observed via security_compute_av_user");
-module_param_named(last_repair_target, last_repair_target, uint, 0444);
-MODULE_PARM_DESC(last_repair_target, "Last value written into status.policyload by the repair path");
-module_param_named(last_old_seqno, last_status_policyload, uint, 0444);
-MODULE_PARM_DESC(last_old_seqno, "Compatibility alias for last_status_policyload");
-module_param_named(last_live_seqno, last_repair_target, uint, 0444);
-MODULE_PARM_DESC(last_live_seqno, "Compatibility alias for last_repair_target");
+/*
+ * Keep diagnostics internal on MuMu. Exporting them as module parameters
+ * imports param_ops_* symbols whose CRCs differ from the public GKI build,
+ * even though the kprobe and SELinux interfaces used by the repair match.
+ */
 
 static void bump_counter(unsigned long *counter)
 {
