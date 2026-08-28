@@ -33,12 +33,12 @@
 Tiny Android kernel module for the SELinux `/sys/fs/selinux/status` and
 `/sys/fs/selinux/access` seqno split exposed by KernelSU policy hiding.
 
-The module restores `status.policyload` to the live AVC `seqno` whenever
-something (typically KernelSU's `apply_kernelsu_rules() ->
-selinux_status_update_policyload(0)`) zeroes it. The repair is performed
-through the same seqlock dance used by the kernel's own writer, so userspace
-readers never observe a torn intermediate state. It does not change `allowed`,
-`auditallow`, `auditdeny`, or `flags` and never affects access decisions.
+On the MuMu target, the module restores a zeroed `status.policyload` to the
+normal positive boot-policy baseline immediately before userspace maps the
+status page. The repair uses the same seqlock dance as the kernel writer, so
+readers never observe a torn intermediate state. It does not change
+`allowed`, `auditallow`, `auditdeny`, or `flags` and never affects access
+decisions.
 
 ## Detection model
 
@@ -54,25 +54,17 @@ status.policyload == access.avd.seqno
 Detectors flag a split when `status.policyload == 0` (or otherwise diverges
 from `access.avd.seqno`) while `status.sequence` is nonzero. Pulling
 `access.avd.seqno` to zero would be visible too, so this module instead
-restores `status.policyload` to the live `avc_policy_seqno()` value, matching
-the AOSP coherence contract.
+restores `status.policyload` to the target's observed baseline value of 1.
 
 ## How it works
 
-1. At load, the module resolves `selinux_kernel_status_page()` and
-   `avc_policy_seqno()` with one-shot kprobes, maps the status page, and runs
-   one **conditional** seed pass (see "Bounded repair" below).
-2. A kretprobe on `selinux_status_update_policyload` is the primary trigger.
-   It only republishes the AVC seqno when `status.policyload == 0` is
-   observed; any non-zero value (including a freshly bumped value from a
-   real `sel_write_load() -> security_load_policy()` hot reload) passes
-   straight through to userspace. This keeps libselinux and `servicemanager`
-   able to detect real policy reloads through their normal status-page
-   channel.
-3. A kretprobe on `security_compute_av_user` acts as a safety net for the
-   case where the policyload symbol cannot be probed or where the stomp
-   happened before the module was loaded.
-4. When the module does write, it uses the same seqlock writer protocol
+1. Module init registers one kretprobe on `selinux_kernel_status_page()`;
+   it does not resolve and call any non-exported SELinux function directly.
+2. When SELinux returns the status page for a userspace mapping, the return
+   handler checks the page ABI, sequence, and policyload value.
+3. Only the MuMu stomp state (`version == 1`, positive sequence,
+   `policyload == 0`) is repaired. Every positive policyload passes through.
+4. The write uses the same seqlock writer protocol
    (`sequence` even -> odd -> even+2 with `smp_wmb()` between writes) that
    `selinux_status_update_status()` uses, so userspace seqlock-stable
    readers never observe a torn page. `status.sequence` is only ever
@@ -80,15 +72,15 @@ the AOSP coherence contract.
 
 ## Bounded repair
 
-The repair is gated to one specific pattern: **`status.policyload` was just
-set to 0 and the AVC has a positive seqno**. Anything else is left
-untouched. Concretely:
+The repair is gated to one specific pattern: **the status ABI is initialized,
+its sequence is positive, and `status.policyload` is 0**. Anything else is
+left untouched. Concretely:
 
 | State observed                                                | Action               |
 |---------------------------------------------------------------|----------------------|
-| `policyload == 0`, `avc_seqno > 0` (KSU stomp)                | Repair               |
+| `policyload == 0`, positive status sequence (KSU stomp)       | Repair to 1          |
 | `policyload > 0` (real hot reload, or already-coherent state) | Pass through         |
-| `policyload == 0`, `avc_seqno == 0` (pre-6.12 boot early)     | Pass through         |
+| `policyload == 0`, status sequence 0 (early boot)             | Pass through         |
 | 6.12+ early boot baseline `sequence=4, policyload=1`          | Pass through         |
 
 This is the second-iteration design after maintainer feedback. The earlier
@@ -101,21 +93,19 @@ out the artificial KSU stomp.
 
 ## Build target
 
-The bundled GitHub Actions workflow builds for the maintainer's own
-device against the OnePlus 13 SM8750 6.6.89 kernel:
+The bundled GitHub Actions workflow builds for MuMu Player 12's x86_64
+Android 15 kernel:
 
-- kernel repo: `cctv18/android_kernel_common_oneplus_sm8750`
-- kernel branch: `oneplus/sm8750_v_16.0.0_oneplus_13_6.6.89`
+- kernel repo: `ramabondanp/android_kernel_common-6.1`
+- kernel branch: `android14-6.1`
 - toolchain: `LLVM-Clang18-r510928`
-- default localversion suffix:
-  `android15-8-g7e1f3c083cc6-abogki467167594-4k`
+- release: `6.1.90-perf+`
+- target `module_layout` CRC: `0xc4965eab`
 
 For other kernels you must build the module yourself against the matching
-kernel tree. The C source itself is portable to any arm64 Android kernel
-that exports (or has resolvable via kallsyms) `selinux_kernel_status_page`,
-`selinux_status_update_policyload`, `avc_policy_seqno`, and
-`security_compute_av_user`. Pull the source, point `KDIR` at your kernel,
-and build:
+kernel tree. The C source itself is portable to arm64 and x86_64 Android
+kernels where `selinux_kernel_status_page` can be probed. Pull the source,
+point `KDIR` at your kernel, and build:
 
 ```sh
 make KDIR=/path/to/kernel/source O=/path/to/kernel/out ARCH=arm64 LLVM=1
@@ -184,14 +174,12 @@ su -c 'rmmod selinux_seqno_fix'
 ## Notes
 
 - Requires `CONFIG_KPROBES` and `CONFIG_KRETPROBES`.
-- Resolves `selinux_kernel_status_page()`,
-  `selinux_status_update_policyload()` and `avc_policy_seqno()` via
-  temporary kprobes at load time.
+- Uses one kretprobe on `selinux_kernel_status_page()`. The returned page
+  is repaired before userspace maps it, so module init never calls into
+  non-exported SELinux internals and the access-decision path is untouched.
 - Supports arm64 and x86_64 Android kernels.
-- If the primary `selinux_status_update_policyload` kretprobe cannot be
-  registered, the module continues with the `security_compute_av_user`-only
-  safety-net path. If `selinux_kernel_status_page()` cannot be resolved at
-  all, the module refuses to load rather than guessing structure offsets.
+- If `selinux_kernel_status_page()` cannot be probed, the module refuses to
+  load rather than guessing structure offsets.
 
 ## Lifetime / when to retire this module
 

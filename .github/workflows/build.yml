@@ -77,6 +77,7 @@ jobs:
           echo "kernel_branch=$KERNEL_BRANCH" >> "$GITHUB_OUTPUT"
           echo "kernel_suffix=$KERNEL_SUFFIX" >> "$GITHUB_OUTPUT"
           echo "kernel_key=$KERNEL_KEY" >> "$GITHUB_OUTPUT"
+          echo "LOCALVERSION=-${KERNEL_SUFFIX#-}" >> "$GITHUB_ENV"
 
       - name: Restore download cache
         uses: actions/cache@v4
@@ -175,11 +176,10 @@ jobs:
             sed -i 's/ -dirty//g' "$f"
             sed -i 's/${scm_version}//' "$f"
           done
-          sed -i '/^CONFIG_LOCALVERSION=/d' arch/x86/configs/gki_defconfig
-          sed -i '/^CONFIG_LOCALVERSION_AUTO=/d' arch/x86/configs/gki_defconfig
-          printf 'CONFIG_LOCALVERSION="-%s"\nCONFIG_LOCALVERSION_AUTO=n\n' "$KERNEL_SUFFIX" >> arch/x86/configs/gki_defconfig
+          rm -f "$KERNEL_OUT/include/config/kernel.release" \
+            "$KERNEL_OUT/include/generated/utsrelease.h"
 
-            # Patch the base version; CONFIG_LOCALVERSION supplies "-perf+".
+            # Patch the base version; the exported LOCALVERSION supplies "-perf+".
             sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 90/' Makefile
 
             # Disable features not present in 6.1.90 kernel
