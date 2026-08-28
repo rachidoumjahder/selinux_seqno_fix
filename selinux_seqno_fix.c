@@ -265,6 +265,9 @@ static int seqno_fix_entry_handler(struct kretprobe_instance *ri,
 #if defined(CONFIG_ARM64)
 	/* security_compute_av_user(..., avd) passes avd as the fourth argument. */
 	data->avd = (struct av_decision_compat *)regs->regs[3];
+#elif defined(CONFIG_X86_64)
+	/* x86_64: 4th argument is in rcx */
+	data->avd = (struct av_decision_compat *)regs->cx;
 #else
 	data->avd = NULL;
 #endif
@@ -349,8 +352,8 @@ static int __init selinux_seqno_fix_init(void)
 	u32 seed_seqno;
 	int ret;
 
-#if !defined(CONFIG_ARM64)
-	pr_err("unsupported architecture; this module expects arm64 pt_regs\n");
+#if !defined(CONFIG_ARM64) && !defined(CONFIG_X86_64)
+	pr_err("unsupported architecture; this module expects arm64 or x86_64\n");
 	return -EOPNOTSUPP;
 #endif
 
