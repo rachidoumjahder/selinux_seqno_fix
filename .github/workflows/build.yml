@@ -46,7 +46,7 @@ concurrency:
 
 env:
   TZ: Asia/Shanghai
-  ARCH: arm64
+  ARCH: x86_64
   TOOLCHAIN_URL: https://github.com/cctv18/oneplus_sm8650_toolchain/releases/download/LLVM-Clang18-r510928
   MODULE_NAME: selinux_seqno_fix
 
@@ -171,12 +171,11 @@ jobs:
             sed -i 's/${scm_version}//' "$f"
             sed -i -E '$s|echo ".*"|echo ""|' "$f"
           done
-          sed -i '/^CONFIG_LOCALVERSION=/d' arch/arm64/configs/gki_defconfig
-          sed -i '/^CONFIG_LOCALVERSION_AUTO=/d' arch/arm64/configs/gki_defconfig
-          printf 'CONFIG_LOCALVERSION="-%s"\nCONFIG_LOCALVERSION_AUTO=n\n' "$KERNEL_SUFFIX" >> arch/arm64/configs/gki_defconfig
+          sed -i '/^CONFIG_LOCALVERSION=/d' arch/x86/configs/gki_defconfig
+          sed -i '/^CONFIG_LOCALVERSION_AUTO=/d' arch/x86/configs/gki_defconfig
+          printf 'CONFIG_LOCALVERSION="-%s"\nCONFIG_LOCALVERSION_AUTO=n\n' "$KERNEL_SUFFIX" >> arch/x86/configs/gki_defconfig
 
-          make -j"$(nproc)" LLVM=1 ARCH=arm64 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
+          make -j"$(nproc)" LLVM=1 ARCH=x86 \
             CC=clang LD=ld.lld HOSTLD=ld.lld O="$KERNEL_OUT" \
             KCFLAGS+=-O2 KCFLAGS+=-Wno-error \
             gki_defconfig
@@ -199,8 +198,7 @@ jobs:
           build_modules_for_symvers() {
             local log="${GITHUB_WORKSPACE}/kernel-modules.log"
             echo "::group::Build in-tree modules for Module.symvers"
-            make -j"$(nproc)" LLVM=1 ARCH=arm64 \
-              CROSS_COMPILE=aarch64-linux-gnu- \
+            make -j"$(nproc)" LLVM=1 ARCH=x86 \
               CC=clang LD=ld.lld HOSTLD=ld.lld O="$KERNEL_OUT" \
               KCFLAGS+=-O2 KCFLAGS+=-Wno-error \
               modules >"$log" 2>&1 &
@@ -223,18 +221,16 @@ jobs:
             build_modules_for_symvers
           fi
 
-          make -j"$(nproc)" LLVM=1 ARCH=arm64 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
+          make -j"$(nproc)" LLVM=1 ARCH=x86 \
             CC=clang LD=ld.lld HOSTLD=ld.lld O="$KERNEL_OUT" \
             KCFLAGS+=-O2 KCFLAGS+=-Wno-error \
             modules_prepare
 
-          make -s LLVM=1 ARCH=arm64 O="$KERNEL_OUT" kernelrelease | tee "${GITHUB_WORKSPACE}/kernelrelease.txt"
+          make -s LLVM=1 ARCH=x86 O="$KERNEL_OUT" kernelrelease | tee "${GITHUB_WORKSPACE}/kernelrelease.txt"
           if [[ ! -s "$KERNEL_OUT/Module.symvers" ]]; then
             echo "::warning::Module.symvers is missing after modules_prepare; building in-tree modules once to generate kernel symbol versions."
             build_modules_for_symvers
-            make -j"$(nproc)" LLVM=1 ARCH=arm64 \
-              CROSS_COMPILE=aarch64-linux-gnu- \
+            make -j"$(nproc)" LLVM=1 ARCH=x86 \
               CC=clang LD=ld.lld HOSTLD=ld.lld O="$KERNEL_OUT" \
               KCFLAGS+=-O2 KCFLAGS+=-Wno-error \
               modules_prepare
@@ -258,7 +254,7 @@ jobs:
           echo "::endgroup::"
 
           make -C "${GITHUB_WORKSPACE}/kernel_workspace/common" O="$KERNEL_OUT" M="${GITHUB_WORKSPACE}" \
-            LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            LLVM=1 ARCH=x86 \
             CC=clang LD=ld.lld HOSTLD=ld.lld \
             KBUILD_MODPOST_WARN="${KBUILD_MODPOST_WARN:-0}" \
             KCFLAGS+=-O2 KCFLAGS+=-Wno-error \
