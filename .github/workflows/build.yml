@@ -175,6 +175,13 @@ jobs:
           sed -i '/^CONFIG_LOCALVERSION_AUTO=/d' arch/x86/configs/gki_defconfig
           printf 'CONFIG_LOCALVERSION="-%s"\nCONFIG_LOCALVERSION_AUTO=n\n' "$KERNEL_SUFFIX" >> arch/x86/configs/gki_defconfig
 
+            # Patch kernel version to match target device (6.1.90)
+            sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 90/' Makefile
+            sed -i 's/^EXTRAVERSION = .*/EXTRAVERSION = -perf+/' Makefile
+
+            # Disable features not present in 6.1.90 kernel
+            printf 'CONFIG_CFI_CLANG=n\nCONFIG_DEBUG_INFO_BTF=n\nCONFIG_KCFI=n\n' >> arch/x86/configs/gki_defconfig
+
           make -j"$(nproc)" LLVM=1 ARCH=x86 \
             CC=clang LD=ld.lld HOSTLD=ld.lld O="$KERNEL_OUT" \
             KCFLAGS+=-O2 KCFLAGS+=-Wno-error \
