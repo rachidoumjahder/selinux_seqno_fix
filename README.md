@@ -164,6 +164,10 @@ module parameters. MuMu's kernel gives the public GKI `param_ops_*`
 symbols different modversion CRCs, while the interfaces used by the
 repair itself remain compatible.
 
+The packaged KernelSU `service.sh` loads the probe before switching MuMu
+from its permissive boot default to enforcing mode. The next SELinux status
+page access then repairs KernelSU's zeroed policyload metadata.
+
 Unload:
 
 ```sh
