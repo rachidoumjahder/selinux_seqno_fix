@@ -58,10 +58,9 @@ restores `status.policyload` to the target's observed baseline value of 1.
 
 ## How it works
 
-1. Module init registers one kretprobe on `selinux_kernel_status_page()`;
-   it does not resolve and call any non-exported SELinux function directly.
-2. When SELinux returns the status page for a userspace mapping, the return
-   handler checks the page ABI, sequence, and policyload value.
+1. Module init resolves only `selinux_kernel_status_page()` through a
+   temporary kprobe and obtains the already-allocated status page.
+2. It checks the page ABI, sequence, and policyload value once at load.
 3. Only the MuMu stomp state (`version == 1`, positive sequence,
    `policyload == 0`) is repaired. Every positive policyload passes through.
 4. The write uses the same seqlock writer protocol
@@ -174,9 +173,8 @@ su -c 'rmmod selinux_seqno_fix'
 ## Notes
 
 - Requires `CONFIG_KPROBES` and `CONFIG_KRETPROBES`.
-- Uses one kretprobe on `selinux_kernel_status_page()`. The returned page
-  is repaired before userspace maps it, so module init never calls into
-  non-exported SELinux internals and the access-decision path is untouched.
+- Resolves and calls only `selinux_kernel_status_page()` for a one-shot
+  repair; the access-decision path is untouched.
 - Supports arm64 and x86_64 Android kernels.
 - If `selinux_kernel_status_page()` cannot be probed, the module refuses to
   load rather than guessing structure offsets.

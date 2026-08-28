@@ -2,10 +2,8 @@
 /*
  * Repair the SELinux status page after KernelSU publishes policyload=0.
  *
- * Duck Detector obtains this page through selinux_kernel_status_page(). A
- * kretprobe on that narrow accessor lets us repair the page immediately
- * before userspace maps it. This avoids calling non-exported SELinux
- * functions from module init and avoids probing the access-decision path.
+ * The module resolves only selinux_kernel_status_page(), performs one
+ * conditional repair, and leaves the access-decision path untouched.
  *
  * The repair is deliberately gated: policyload must be zero and the status
  * page must already describe a loaded policy. Every non-zero value is left
@@ -33,8 +31,26 @@ struct selinux_kernel_status_compat {
 };
 
 static DEFINE_SPINLOCK(status_repair_lock);
-static unsigned long status_page_hits;
 static unsigned long status_fixups;
+
+typedef struct page *(*selinux_kernel_status_page_fn)(void);
+
+static void *resolve_symbol_with_kprobe(const char *name)
+{
+	struct kprobe kp = {
+		.symbol_name = name,
+	};
+	void *address;
+	int ret;
+
+	ret = register_kprobe(&kp);
+	if (ret)
+		return NULL;
+
+	address = (void *)kp.addr;
+	unregister_kprobe(&kp);
+	return address;
+}
 
 static void publish_policyload_one(struct selinux_kernel_status_compat *status)
 {
@@ -70,58 +86,46 @@ static void publish_policyload_one(struct selinux_kernel_status_compat *status)
 		sequence, sequence + 2, status_fixups);
 }
 
-static int status_page_return_handler(struct kretprobe_instance *ri,
-				      struct pt_regs *regs)
+static int __init selinux_seqno_fix_init(void)
 {
+	selinux_kernel_status_page_fn status_page_fn;
 	struct selinux_kernel_status_compat *status;
 	struct page *page;
 
-	page = (struct page *)regs_return_value(regs);
-	if (!page)
-		return 0;
-
-	status = page_address(page);
-	if (!status)
-		return 0;
-
-	status_page_hits++;
-	publish_policyload_one(status);
-	return 0;
-}
-
-static struct kretprobe status_page_kretprobe = {
-	.handler = status_page_return_handler,
-	.maxactive = 16,
-	.kp = {
-		.symbol_name = "selinux_kernel_status_page",
-	},
-};
-
-static int __init selinux_seqno_fix_init(void)
-{
-	int ret;
-
-	ret = register_kretprobe(&status_page_kretprobe);
-	if (ret) {
-		pr_err("failed to register selinux_kernel_status_page kretprobe: %d\n",
-		       ret);
-		return ret;
+	status_page_fn = (selinux_kernel_status_page_fn)
+		resolve_symbol_with_kprobe("selinux_kernel_status_page");
+	if (!status_page_fn) {
+		pr_err("failed to resolve selinux_kernel_status_page\n");
+		return -ENOENT;
 	}
 
-	pr_info("loaded; waiting for SELinux status-page access\n");
+	page = status_page_fn();
+	if (!page) {
+		pr_err("SELinux status page is unavailable\n");
+		return -ENOMEM;
+	}
+
+	status = page_address(page);
+	if (!status) {
+		pr_err("SELinux status page has no direct mapping\n");
+		return -EFAULT;
+	}
+
+	publish_policyload_one(status);
+	pr_info("loaded; status sequence=%u policyload=%u fixups=%lu\n",
+		READ_ONCE(status->sequence), READ_ONCE(status->policyload),
+		status_fixups);
 	return 0;
 }
 
 static void __exit selinux_seqno_fix_exit(void)
 {
-	unregister_kretprobe(&status_page_kretprobe);
-	pr_info("unloaded (page_hits=%lu fixups=%lu)\n",
-		status_page_hits, status_fixups);
+	pr_info("unloaded (fixups=%lu)\n", status_fixups);
 }
 
 module_init(selinux_seqno_fix_init);
 module_exit(selinux_seqno_fix_exit);
 
 MODULE_AUTHOR("Andrea-Lyz, Codex");
-MODULE_DESCRIPTION("Repair KSU's zeroed SELinux status.policyload on status-page access");
+MODULE_DESCRIPTION("One-shot repair for KSU's zeroed SELinux status.policyload");
 MODULE_LICENSE("GPL");

@@ -283,13 +283,17 @@ jobs:
       - name: Apply target module_layout CRC
         env:
           MODULE_LAYOUT_CRC: ${{ inputs.module_layout_crc || '0xc4965eab' }}
+          KERNEL_SUFFIX: ${{ steps.vars.outputs.kernel_suffix }}
         run: |
           set -euxo pipefail
           if [[ "$MODULE_LAYOUT_CRC" != "0" ]]; then
+            TARGET_RELEASE="6.1.90-${KERNEL_SUFFIX#-}"
             python3 tools/patch_module_target.py \
               "${MODULE_NAME}.ko" "${MODULE_NAME}.patched.ko" \
-              --crc "module_layout=${MODULE_LAYOUT_CRC}"
+              --crc "module_layout=${MODULE_LAYOUT_CRC}" \
+              --release "$TARGET_RELEASE"
             mv "${MODULE_NAME}.patched.ko" "${MODULE_NAME}.ko"
+            printf '%s\n' "$TARGET_RELEASE" > kernelrelease.txt
             modinfo "${MODULE_NAME}.ko" | tee modinfo.txt
           fi
 
