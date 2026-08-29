@@ -1,5 +1,15 @@
 # selinux_seqno_fix
 
+The module now contains two narrowly scoped return probes for the MuMu
+6.1.90-perf+ research image:
+
+- repair a zeroed SELinux status-page `policyload` value after KernelSU;
+- replace `@` with `-` only in output appended by `version_proc_show()`,
+  removing the `build-user@build-host` false positive from `/proc/version`.
+
+The version sanitizer is optional at runtime: if its kernel symbol cannot be
+probed, the SELinux repair still loads and operates normally.
+
 > **Status: temporary stop-gap.** This module exists only because current
 > KernelSU builds expose a `status.policyload == 0` vs `access.avd.seqno > 0`
 > split through `apply_kernelsu_rules() -> selinux_status_update_policyload(0)`.
