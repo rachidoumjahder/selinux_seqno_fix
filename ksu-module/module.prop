@@ -1,6 +1,6 @@
 id=selinux_seqno_fix
-name=SELinux Seqno Fix
-version=v0.5
-versionCode=5
+name=MuMu Duck Kernel Fixes
+version=v0.6
+versionCode=6
 author=Andrea-Lyz
-description=Restore KSU-zeroed SELinux status.policyload and sanitize MuMu's @build marker from /proc/version without changing uname or the kernel image.
+description=Repair KSU-zeroed SELinux status, sanitize MuMu's @build marker, and present neutral mount aliases only to Duck Detector's UID.

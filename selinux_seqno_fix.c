@@ -14,6 +14,7 @@
 #define pr_fmt(fmt) "selinux_seqno_fix: " fmt
 
 #include <linux/compiler.h>
+#include <linux/cred.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/kprobes.h>
@@ -39,11 +40,40 @@ static unsigned long status_fixups;
 static unsigned long version_reads;
 static unsigned long version_sanitizations;
 static bool version_probe_registered;
+static unsigned long mount_reads;
+static unsigned long mount_source_sanitizations;
+static unsigned long mount_path_sanitizations;
+static bool mount_probe_registered;
+
+static unsigned int duck_uid = 10060;
+module_param(duck_uid, uint, 0400);
+MODULE_PARM_DESC(duck_uid, "Android UID whose /proc/mounts output is sanitized");
 
 struct version_probe_data {
 	struct seq_file *seq;
 	size_t start_count;
 };
+
+struct mount_probe_data {
+	struct seq_file *seq;
+	size_t start_count;
+};
+
+static char *find_bytes(char *buf, size_t len, const char *needle,
+			size_t needle_len)
+{
+	size_t i;
+
+	if (!needle_len || needle_len > len)
+		return NULL;
+
+	for (i = 0; i <= len - needle_len; i++) {
+		if (!memcmp(buf + i, needle, needle_len))
+			return buf + i;
+	}
+
+	return NULL;
+}
 
 static void publish_policyload_one(struct selinux_kernel_status_compat *status)
 {
@@ -171,6 +201,90 @@ static struct kretprobe version_proc_kretprobe = {
 	},
 };
 
+/*
+ * MuMu exposes two emulator mount-layout details in /proc/self/mounts:
+ * /vendor is backed directly by sda7 and a set of instrumentation mounts use
+ * /data/local/tmp/fake_* targets.  Present length-preserving neutral aliases
+ * only to Duck Detector's UID.  No mount, namespace, or backing device is
+ * changed, and every other process continues to receive the original text.
+ */
+static int mount_entry_handler(struct kretprobe_instance *ri,
+			       struct pt_regs *regs)
+{
+	struct mount_probe_data *data =
+		(struct mount_probe_data *)ri->data;
+	struct seq_file *seq;
+
+	data->seq = NULL;
+	data->start_count = 0;
+	if (__kuid_val(current_uid()) != duck_uid)
+		return 0;
+
+	seq = (struct seq_file *)regs_get_kernel_argument(regs, 0);
+	data->seq = seq;
+	data->start_count = seq ? READ_ONCE(seq->count) : 0;
+	return 0;
+}
+
+static int mount_return_handler(struct kretprobe_instance *ri,
+				struct pt_regs *regs)
+{
+	static const char vendor_source[] = "/dev/block/sda7";
+	static const char dm_source[] = "/dev/block/dm-0";
+	static const char fake_prefix[] = "/data/local/tmp/fake_";
+	static const char neutral_prefix[] = "/mnt/vendor/tmp/node_";
+	struct mount_probe_data *data =
+		(struct mount_probe_data *)ri->data;
+	struct seq_file *seq = data->seq;
+	char *line;
+	char *match;
+	size_t line_len;
+	size_t i;
+
+	if ((long)regs_return_value(regs) != 0 || !seq || !READ_ONCE(seq->buf))
+		return 0;
+
+	if (sizeof(vendor_source) != sizeof(dm_source) ||
+	    sizeof(fake_prefix) != sizeof(neutral_prefix))
+		return 0;
+
+	if (data->start_count >= READ_ONCE(seq->count) ||
+	    READ_ONCE(seq->count) > READ_ONCE(seq->size))
+		return 0;
+
+	line = READ_ONCE(seq->buf) + data->start_count;
+	line_len = READ_ONCE(seq->count) - data->start_count;
+	mount_reads++;
+
+	match = find_bytes(line, line_len, vendor_source,
+			   sizeof(vendor_source) - 1);
+	if (match && find_bytes(line, line_len, " /vendor ", 9)) {
+		for (i = 0; i < sizeof(dm_source) - 1; i++)
+			WRITE_ONCE(match[i], dm_source[i]);
+		mount_source_sanitizations++;
+	}
+
+	match = find_bytes(line, line_len, fake_prefix,
+			   sizeof(fake_prefix) - 1);
+	if (match) {
+		for (i = 0; i < sizeof(neutral_prefix) - 1; i++)
+			WRITE_ONCE(match[i], neutral_prefix[i]);
+		mount_path_sanitizations++;
+	}
+
+	return 0;
+}
+
+static struct kretprobe mount_kretprobe = {
+	.entry_handler = mount_entry_handler,
+	.handler = mount_return_handler,
+	.data_size = sizeof(struct mount_probe_data),
+	.maxactive = 32,
+	.kp = {
+		.symbol_name = "show_vfsmnt",
+	},
+};
+
 static int __init selinux_seqno_fix_init(void)
 {
 	int ret;
@@ -191,23 +305,35 @@ static int __init selinux_seqno_fix_init(void)
 		pr_info("/proc/version sanitizer active\n");
 	}
 
+	ret = register_kretprobe(&mount_kretprobe);
+	if (ret) {
+		pr_warn("show_vfsmnt probe unavailable: %d; other repairs remain active\n",
+			ret);
+	} else {
+		mount_probe_registered = true;
+		pr_info("Duck UID %u /proc/mounts sanitizer active\n", duck_uid);
+	}
+
 	pr_info("loaded; waiting for SELinux status-page access\n");
 	return 0;
 }
 
 static void __exit selinux_seqno_fix_exit(void)
 {
+	if (mount_probe_registered)
+		unregister_kretprobe(&mount_kretprobe);
 	if (version_probe_registered)
 		unregister_kretprobe(&version_proc_kretprobe);
 	unregister_kretprobe(&status_page_kretprobe);
-	pr_info("unloaded (page_hits=%lu fixups=%lu version_reads=%lu sanitized=%lu)\n",
+	pr_info("unloaded (page_hits=%lu fixups=%lu version_reads=%lu sanitized=%lu mount_reads=%lu sources=%lu paths=%lu)\n",
 		status_page_hits, status_fixups, version_reads,
-		version_sanitizations);
+		version_sanitizations, mount_reads,
+		mount_source_sanitizations, mount_path_sanitizations);
 }
 
 module_init(selinux_seqno_fix_init);
 module_exit(selinux_seqno_fix_exit);
 
 MODULE_AUTHOR("Andrea-Lyz, Codex");
-MODULE_DESCRIPTION("Repair KSU SELinux status and sanitize MuMu /proc/version identity");
+MODULE_DESCRIPTION("Repair MuMu SELinux, kernel identity, and Duck mount presentation");
 MODULE_LICENSE("GPL");
