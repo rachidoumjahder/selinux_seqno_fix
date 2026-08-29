@@ -1,6 +1,6 @@
 id=selinux_seqno_fix
 name=MuMu Duck Kernel Fixes
-version=v0.8
-versionCode=8
+version=v0.9
+versionCode=9
 author=Andrea-Lyz
-description=Repair KSU-zeroed SELinux status, sanitize MuMu's @build marker, and present neutral aliases in mounts and mountinfo.
+description=Repair MuMu SELinux status and sanitize exact kernel, mount, mountinfo, and overlayfs presentation strings.

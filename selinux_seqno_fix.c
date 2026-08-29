@@ -44,6 +44,9 @@ static unsigned long mount_source_sanitizations;
 static unsigned long mount_path_sanitizations;
 static bool mount_probe_registered;
 static bool mountinfo_probe_registered;
+static unsigned long filesystem_reads;
+static unsigned long overlay_sanitizations;
+static bool filesystems_probe_registered;
 
 struct version_probe_data {
 	struct seq_file *seq;
@@ -292,6 +295,71 @@ static struct kretprobe mountinfo_kretprobe = {
 	},
 };
 
+/*
+ * Duck treats the presence of the overlay filesystem driver in
+ * /proc/filesystems as a critical mount signal even when no overlay mount or
+ * root artifact exists.  Rewrite only that emitted filesystem name.  This
+ * does not unregister overlayfs or change any mounted filesystem.
+ */
+static int filesystems_entry_handler(struct kretprobe_instance *ri,
+				     struct pt_regs *regs)
+{
+	struct mount_probe_data *data =
+		(struct mount_probe_data *)ri->data;
+	struct seq_file *seq;
+
+	seq = (struct seq_file *)regs_get_kernel_argument(regs, 0);
+	data->seq = seq;
+	data->start_count = seq ? READ_ONCE(seq->count) : 0;
+	return 0;
+}
+
+static int filesystems_return_handler(struct kretprobe_instance *ri,
+				      struct pt_regs *regs)
+{
+	static const char overlay_name[] = "overlay";
+	static const char neutral_name[] = "layerfs";
+	struct mount_probe_data *data =
+		(struct mount_probe_data *)ri->data;
+	struct seq_file *seq = data->seq;
+	char *line;
+	char *match;
+	size_t line_len;
+	size_t i;
+
+	if ((long)regs_return_value(regs) != 0 || !seq || !READ_ONCE(seq->buf))
+		return 0;
+
+	if (sizeof(overlay_name) != sizeof(neutral_name) ||
+	    data->start_count >= READ_ONCE(seq->count) ||
+	    READ_ONCE(seq->count) > READ_ONCE(seq->size))
+		return 0;
+
+	line = READ_ONCE(seq->buf) + data->start_count;
+	line_len = READ_ONCE(seq->count) - data->start_count;
+	filesystem_reads++;
+
+	match = find_bytes(line, line_len, overlay_name,
+			   sizeof(overlay_name) - 1);
+	if (match) {
+		for (i = 0; i < sizeof(neutral_name) - 1; i++)
+			WRITE_ONCE(match[i], neutral_name[i]);
+		overlay_sanitizations++;
+	}
+
+	return 0;
+}
+
+static struct kretprobe filesystems_kretprobe = {
+	.entry_handler = filesystems_entry_handler,
+	.handler = filesystems_return_handler,
+	.data_size = sizeof(struct mount_probe_data),
+	.maxactive = 16,
+	.kp = {
+		.symbol_name = "filesystems_proc_show",
+	},
+};
+
 static int __init selinux_seqno_fix_init(void)
 {
 	int ret;
@@ -330,12 +398,23 @@ static int __init selinux_seqno_fix_init(void)
 		pr_info("MuMu exact-pattern /proc/mountinfo sanitizer active\n");
 	}
 
+	ret = register_kretprobe(&filesystems_kretprobe);
+	if (ret) {
+		pr_warn("filesystems_proc_show probe unavailable: %d; other repairs remain active\n",
+			ret);
+	} else {
+		filesystems_probe_registered = true;
+		pr_info("/proc/filesystems overlay capability presentation sanitizer active\n");
+	}
+
 	pr_info("loaded; waiting for SELinux status-page access\n");
 	return 0;
 }
 
 static void __exit selinux_seqno_fix_exit(void)
 {
+	if (filesystems_probe_registered)
+		unregister_kretprobe(&filesystems_kretprobe);
 	if (mountinfo_probe_registered)
 		unregister_kretprobe(&mountinfo_kretprobe);
 	if (mount_probe_registered)
@@ -343,10 +422,11 @@ static void __exit selinux_seqno_fix_exit(void)
 	if (version_probe_registered)
 		unregister_kretprobe(&version_proc_kretprobe);
 	unregister_kretprobe(&status_page_kretprobe);
-	pr_info("unloaded (page_hits=%lu fixups=%lu version_reads=%lu sanitized=%lu mount_reads=%lu sources=%lu paths=%lu)\n",
+	pr_info("unloaded (page_hits=%lu fixups=%lu version_reads=%lu sanitized=%lu mount_reads=%lu sources=%lu paths=%lu filesystem_reads=%lu overlay=%lu)\n",
 		status_page_hits, status_fixups, version_reads,
 		version_sanitizations, mount_reads,
-		mount_source_sanitizations, mount_path_sanitizations);
+		mount_source_sanitizations, mount_path_sanitizations,
+		filesystem_reads, overlay_sanitizations);
 }
 
 module_init(selinux_seqno_fix_init);
