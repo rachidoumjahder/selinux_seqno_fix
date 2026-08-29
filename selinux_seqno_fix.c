@@ -42,6 +42,7 @@ static bool version_probe_registered;
 static unsigned long mount_reads;
 static unsigned long mount_source_sanitizations;
 static unsigned long mount_path_sanitizations;
+static unsigned long mount_libdl_sanitizations;
 static bool mount_probe_registered;
 static bool mountinfo_probe_registered;
 static unsigned long filesystem_reads;
@@ -228,6 +229,10 @@ static int mount_return_handler(struct kretprobe_instance *ri,
 	static const char dm_source[] = "/dev/block/dm-0";
 	static const char fake_prefix[] = "/data/local/tmp/fake_";
 	static const char neutral_prefix[] = "/mnt/vendor/tmp/node_";
+	static const char libdl_module_root[] =
+		"/adb/modules/zz_mumu_libdl_overlay_test";
+	static const char neutral_libdl_root[] =
+		"/apex/com.android.runtime/lib64/bionic_";
 	struct mount_probe_data *data =
 		(struct mount_probe_data *)ri->data;
 	struct seq_file *seq = data->seq;
@@ -240,7 +245,8 @@ static int mount_return_handler(struct kretprobe_instance *ri,
 		return 0;
 
 	if (sizeof(vendor_source) != sizeof(dm_source) ||
-	    sizeof(fake_prefix) != sizeof(neutral_prefix))
+	    sizeof(fake_prefix) != sizeof(neutral_prefix) ||
+	    sizeof(libdl_module_root) != sizeof(neutral_libdl_root))
 		return 0;
 
 	if (data->start_count >= READ_ONCE(seq->count) ||
@@ -265,6 +271,14 @@ static int mount_return_handler(struct kretprobe_instance *ri,
 		for (i = 0; i < sizeof(neutral_prefix) - 1; i++)
 			WRITE_ONCE(match[i], neutral_prefix[i]);
 		mount_path_sanitizations++;
+	}
+
+	match = find_bytes(line, line_len, libdl_module_root,
+			   sizeof(libdl_module_root) - 1);
+	if (match) {
+		for (i = 0; i < sizeof(neutral_libdl_root) - 1; i++)
+			WRITE_ONCE(match[i], neutral_libdl_root[i]);
+		mount_libdl_sanitizations++;
 	}
 
 	return 0;
@@ -422,11 +436,12 @@ static void __exit selinux_seqno_fix_exit(void)
 	if (version_probe_registered)
 		unregister_kretprobe(&version_proc_kretprobe);
 	unregister_kretprobe(&status_page_kretprobe);
-	pr_info("unloaded (page_hits=%lu fixups=%lu version_reads=%lu sanitized=%lu mount_reads=%lu sources=%lu paths=%lu filesystem_reads=%lu overlay=%lu)\n",
+	pr_info("unloaded (page_hits=%lu fixups=%lu version_reads=%lu sanitized=%lu mount_reads=%lu sources=%lu paths=%lu libdl_roots=%lu filesystem_reads=%lu overlay=%lu)\n",
 		status_page_hits, status_fixups, version_reads,
 		version_sanitizations, mount_reads,
 		mount_source_sanitizations, mount_path_sanitizations,
-		filesystem_reads, overlay_sanitizations);
+		mount_libdl_sanitizations, filesystem_reads,
+		overlay_sanitizations);
 }
 
 module_init(selinux_seqno_fix_init);
