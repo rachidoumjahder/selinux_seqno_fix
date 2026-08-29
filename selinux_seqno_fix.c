@@ -117,7 +117,8 @@ static struct kretprobe status_page_kretprobe = {
 static int version_proc_entry_handler(struct kretprobe_instance *ri,
 				      struct pt_regs *regs)
 {
-	struct version_probe_data *data = ri->data;
+	struct version_probe_data *data =
+		(struct version_probe_data *)ri->data;
 	struct seq_file *seq;
 
 	seq = (struct seq_file *)regs_get_kernel_argument(regs, 0);
@@ -129,7 +130,8 @@ static int version_proc_entry_handler(struct kretprobe_instance *ri,
 static int version_proc_return_handler(struct kretprobe_instance *ri,
 				       struct pt_regs *regs)
 {
-	struct version_probe_data *data = ri->data;
+	struct version_probe_data *data =
+		(struct version_probe_data *)ri->data;
 	struct seq_file *seq = data->seq;
 	size_t count;
 	size_t i;
