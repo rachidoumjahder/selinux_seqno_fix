@@ -1,21 +1,23 @@
 # selinux_seqno_fix
 
-The module now contains two narrowly scoped return probes for the MuMu
+The module now contains narrowly scoped return probes for the MuMu
 6.1.90-perf+ research image:
 
 - repair a zeroed SELinux status-page `policyload` value after KernelSU;
 - replace `@` with `-` only in output appended by `version_proc_show()`,
   removing the `build-user@build-host` false positive from `/proc/version`.
 - present length-preserving neutral aliases for MuMu's exact `/vendor` source
-  and `/data/local/tmp/fake_*` target strings in `/proc/mounts` output.
+  and `/data/local/tmp/fake_*` target strings in `/proc/mounts` and
+  `/proc/mountinfo` output.
 
 The version sanitizer is optional at runtime: if its kernel symbol cannot be
 probed, the SELinux repair still loads and operates normally.
 
 The mount sanitizer is also optional and exact-pattern scoped. It changes only
-emitted text from `show_vfsmnt()`; it does not alter mounts, namespaces, or
-devices. Avoiding task and module-parameter lookups also keeps it within the
-small verified symbol surface exposed by the target MuMu kernel.
+emitted text from `show_vfsmnt()` and `show_mountinfo()`; it does not alter
+mounts, namespaces, or devices. Avoiding task and module-parameter lookups also
+keeps it within the small verified symbol surface exposed by the target MuMu
+kernel.
 
 > **Status: temporary stop-gap.** This module exists only because current
 > KernelSU builds expose a `status.policyload == 0` vs `access.avd.seqno > 0`

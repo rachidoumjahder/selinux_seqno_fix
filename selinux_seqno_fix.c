@@ -43,6 +43,7 @@ static unsigned long mount_reads;
 static unsigned long mount_source_sanitizations;
 static unsigned long mount_path_sanitizations;
 static bool mount_probe_registered;
+static bool mountinfo_probe_registered;
 
 struct version_probe_data {
 	struct seq_file *seq;
@@ -201,7 +202,8 @@ static struct kretprobe version_proc_kretprobe = {
  * /vendor is backed directly by sda7 and a set of instrumentation mounts use
  * /data/local/tmp/fake_* targets.  Present length-preserving neutral aliases
  * only to Duck Detector's UID.  No mount, namespace, or backing device is
- * changed, and every other process continues to receive the original text.
+ * changed. The rewrite is global because the target kernel does not expose a
+ * module-safe task/credential symbol with a verified MODVERSIONS checksum.
  */
 static int mount_entry_handler(struct kretprobe_instance *ri,
 			       struct pt_regs *regs)
@@ -275,6 +277,21 @@ static struct kretprobe mount_kretprobe = {
 	},
 };
 
+/*
+ * /proc/<pid>/mountinfo is emitted by a separate seq_file show function.
+ * Keep its presentation consistent with /proc/<pid>/mounts so callers cannot
+ * recover the MuMu-only target names through the richer mountinfo view.
+ */
+static struct kretprobe mountinfo_kretprobe = {
+	.entry_handler = mount_entry_handler,
+	.handler = mount_return_handler,
+	.data_size = sizeof(struct mount_probe_data),
+	.maxactive = 32,
+	.kp = {
+		.symbol_name = "show_mountinfo",
+	},
+};
+
 static int __init selinux_seqno_fix_init(void)
 {
 	int ret;
@@ -304,12 +321,23 @@ static int __init selinux_seqno_fix_init(void)
 		pr_info("MuMu exact-pattern /proc/mounts sanitizer active\n");
 	}
 
+	ret = register_kretprobe(&mountinfo_kretprobe);
+	if (ret) {
+		pr_warn("show_mountinfo probe unavailable: %d; other repairs remain active\n",
+			ret);
+	} else {
+		mountinfo_probe_registered = true;
+		pr_info("MuMu exact-pattern /proc/mountinfo sanitizer active\n");
+	}
+
 	pr_info("loaded; waiting for SELinux status-page access\n");
 	return 0;
 }
 
 static void __exit selinux_seqno_fix_exit(void)
 {
+	if (mountinfo_probe_registered)
+		unregister_kretprobe(&mountinfo_kretprobe);
 	if (mount_probe_registered)
 		unregister_kretprobe(&mount_kretprobe);
 	if (version_probe_registered)
