@@ -14,7 +14,6 @@
 #define pr_fmt(fmt) "selinux_seqno_fix: " fmt
 
 #include <linux/compiler.h>
-#include <linux/cred.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/kprobes.h>
@@ -44,10 +43,6 @@ static unsigned long mount_reads;
 static unsigned long mount_source_sanitizations;
 static unsigned long mount_path_sanitizations;
 static bool mount_probe_registered;
-
-static unsigned int duck_uid = 10060;
-module_param(duck_uid, uint, 0400);
-MODULE_PARM_DESC(duck_uid, "Android UID whose /proc/mounts output is sanitized");
 
 struct version_probe_data {
 	struct seq_file *seq;
@@ -215,11 +210,6 @@ static int mount_entry_handler(struct kretprobe_instance *ri,
 		(struct mount_probe_data *)ri->data;
 	struct seq_file *seq;
 
-	data->seq = NULL;
-	data->start_count = 0;
-	if (__kuid_val(current_uid()) != duck_uid)
-		return 0;
-
 	seq = (struct seq_file *)regs_get_kernel_argument(regs, 0);
 	data->seq = seq;
 	data->start_count = seq ? READ_ONCE(seq->count) : 0;
@@ -311,7 +301,7 @@ static int __init selinux_seqno_fix_init(void)
 			ret);
 	} else {
 		mount_probe_registered = true;
-		pr_info("Duck UID %u /proc/mounts sanitizer active\n", duck_uid);
+		pr_info("MuMu exact-pattern /proc/mounts sanitizer active\n");
 	}
 
 	pr_info("loaded; waiting for SELinux status-page access\n");

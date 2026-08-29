@@ -1,6 +1,6 @@
 id=selinux_seqno_fix
 name=MuMu Duck Kernel Fixes
-version=v0.6
-versionCode=6
+version=v0.7
+versionCode=7
 author=Andrea-Lyz
-description=Repair KSU-zeroed SELinux status, sanitize MuMu's @build marker, and present neutral mount aliases only to Duck Detector's UID.
+description=Repair KSU-zeroed SELinux status, sanitize MuMu's @build marker, and present neutral aliases for exact MuMu mount-layout strings.
