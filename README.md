@@ -13,6 +13,8 @@ The module now contains narrowly scoped return probes for the MuMu
   `/proc/filesystems`, without unregistering the driver or changing mounts.
 - alias the exact `zz_mumu_libdl_overlay_test` mountinfo root used by the
   audited dlclose-prologue overlay, without changing its target or backing.
+- alias the exact `mumu_a15_identity` mountinfo root used by the existing
+  vendor identity model, without changing its target or backing.
 
 The version sanitizer is optional at runtime: if its kernel symbol cannot be
 probed, the SELinux repair still loads and operates normally.

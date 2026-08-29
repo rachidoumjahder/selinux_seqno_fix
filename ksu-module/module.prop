@@ -1,6 +1,6 @@
 id=selinux_seqno_fix
 name=MuMu Duck Kernel Fixes
-version=v0.10
-versionCode=10
+version=v0.11
+versionCode=11
 author=Andrea-Lyz
-description=Repair MuMu SELinux status and sanitize exact kernel, mount, mountinfo, overlayfs, and libdl-overlay presentation strings.
+description=Repair MuMu SELinux status and sanitize exact kernel, mount, mountinfo, overlayfs, libdl, and identity-overlay presentation strings.
