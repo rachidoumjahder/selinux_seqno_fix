@@ -4,6 +4,6 @@
 # prefers a `Kbuild` over `Makefile`, which avoids the KERNELRELEASE-guard
 # ambiguity that can make obj-m disappear during external module builds.
 
-obj-m += selinux_seqno_fix.o
+obj-m += selinux_status_repair.o
 
 ccflags-y += -Wno-unused-function

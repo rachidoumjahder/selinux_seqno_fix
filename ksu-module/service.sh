@@ -1,8 +1,8 @@
 #!/system/bin/sh
 
 MODDIR="${0%/*}"
-KO="$MODDIR/selinux_seqno_fix.ko"
-MODULE_DIR="/sys/module/selinux_seqno_fix"
+KO="$MODDIR/selinux_status_repair.ko"
+MODULE_DIR="/sys/module/selinux_status_repair"
 LOG="$MODDIR/load.log"
 
 log_msg() {
@@ -36,7 +36,7 @@ fi
 if insmod "$KO" >> "$LOG" 2>&1; then
   log_msg "insmod ok"
   ensure_enforcing
-  dmesg | grep selinux_seqno_fix | tail -n 10 >> "$LOG" 2>/dev/null
+  dmesg | grep selinux_status_repair | tail -n 10 >> "$LOG" 2>/dev/null
 else
   rc=$?
   log_msg "insmod failed rc=$rc"

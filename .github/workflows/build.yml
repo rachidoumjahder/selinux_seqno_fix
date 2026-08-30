@@ -1,4 +1,4 @@
-name: Build selinux_seqno_fix.ko
+name: Build selinux_status_repair.ko
 
 on:
   workflow_dispatch:
@@ -37,7 +37,7 @@ on:
     paths:
       - Kbuild
       - Makefile
-      - selinux_seqno_fix.c
+      - selinux_status_repair.c
       - README.md
       - ksu-module/**
       - .github/workflows/build.yml
@@ -53,7 +53,7 @@ env:
   TZ: Asia/Shanghai
   ARCH: x86_64
   TOOLCHAIN_URL: https://github.com/cctv18/oneplus_sm8650_toolchain/releases/download/LLVM-Clang18-r510928
-  MODULE_NAME: selinux_seqno_fix
+  MODULE_NAME: selinux_status_repair
 
 jobs:
   build:
@@ -102,7 +102,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: kernel_workspace/out
-          key: kernel-out-${{ steps.vars.outputs.kernel_key }}-clang18-r510928-v2-${{ hashFiles('Kbuild', 'selinux_seqno_fix.c', 'Makefile') }}
+          key: kernel-out-${{ steps.vars.outputs.kernel_key }}-clang18-r510928-v2-${{ hashFiles('Kbuild', 'selinux_status_repair.c', 'Makefile') }}
           restore-keys: |
             kernel-out-${{ steps.vars.outputs.kernel_key }}-clang18-r510928-v2-
 
@@ -260,7 +260,7 @@ jobs:
           KERNEL_OUT="${GITHUB_WORKSPACE}/kernel_workspace/out"
 
           echo "::group::External module sources"
-          ls -la "${GITHUB_WORKSPACE}"/{Kbuild,Makefile,selinux_seqno_fix.c}
+          ls -la "${GITHUB_WORKSPACE}"/{Kbuild,Makefile,selinux_status_repair.c}
           echo "::endgroup::"
 
           make -C "${GITHUB_WORKSPACE}/kernel_workspace/common" O="$KERNEL_OUT" M="${GITHUB_WORKSPACE}" \
@@ -324,5 +324,5 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: selinux_seqno_fix-ko
+          name: selinux_status_repair-ko
           path: artifacts/**
